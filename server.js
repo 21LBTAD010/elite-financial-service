@@ -12,92 +12,41 @@ const DB_PATH = './loans.db';
 const JWT_SECRET = 'elite_financial_super_secret_key_123';
 const db = new sqlite3.Database(DB_PATH);
 
-// Helper: Simulated WhatsApp OTP Sender
-async function sendWhatsAppOTP(phoneNumber, otp) {
-    console.log(`\n========================================`);
-    console.log(`📲 [Elite Financial Service OTP - ${phoneNumber}]: ${otp}`);
-    console.log(`========================================\n`);
-}
-
 // -------------------------------------------------------------
-// 1. AUTHENTICATION & AUTO-REGISTRATION ENDPOINTS
+// 1. FIXED PASSWORD AUTHENTICATION
 // -------------------------------------------------------------
 
-// Request OTP or Auto-Register New User
-app.post('/api/auth/request-otp', (req, res) => {
-    const { phone } = req.body;
-    if (!phone) return res.status(400).json({ error: 'Phone number is required' });
+app.post('/api/auth/login', (req, res) => {
+    const { phone, password } = req.body;
+    if (!phone || !password) {
+        return res.status(400).json({ error: 'Mobile number and password are required.' });
+    }
 
     db.get('SELECT * FROM users WHERE phone_number = ?', [phone], (err, user) => {
         if (err) return res.status(500).json({ error: 'Database error' });
 
-        // If user DOES NOT exist -> Auto-register as PENDING
         if (!user) {
-            db.run(
-                'INSERT INTO users (phone_number, name, role, status) VALUES (?, ?, ?, ?)',
-                [phone, `Staff (${phone})`, 'staff', 'pending'],
-                function (err) {
-                    if (err) return res.status(500).json({ error: 'Failed to register user' });
-                    return res.json({ 
-                        status: 'pending', 
-                        message: 'Account created! Your registration request is pending Admin approval.' 
-                    });
-                }
-            );
-            return;
+            return res.status(401).json({ error: 'Invalid phone number or account not found.' });
         }
 
-        // If user EXISTS -> Check Approval Status
         if (user.status === 'pending') {
-            return res.json({ 
-                status: 'pending', 
-                message: 'Your account is currently pending Admin approval.' 
-            });
+            return res.status(403).json({ error: 'Your account is pending Admin approval.' });
         }
 
         if (user.status === 'rejected') {
-            return res.status(403).json({ 
-                error: 'Your access request was rejected by the Admin.' 
-            });
+            return res.status(403).json({ error: 'Account access has been disabled by Admin.' });
         }
 
-        // If APPROVED -> Send OTP
-        const otp = Math.floor(100000 + Math.random() * 900000).toString();
-        const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
-
-        db.run(
-            `INSERT OR REPLACE INTO otps (phone_number, otp_code, expires_at) VALUES (?, ?, ?)`,
-            [phone, otp, expiresAt],
-            async (err) => {
-                if (err) return res.status(500).json({ error: 'Failed to generate OTP' });
-                await sendWhatsAppOTP(phone, otp);
-                res.json({ status: 'approved', message: 'OTP sent via WhatsApp successfully' });
-            }
-        );
-    });
-});
-
-// Verify OTP & Session Control
-app.post('/api/auth/verify-otp', (req, res) => {
-    const { phone, otp } = req.body;
-
-    db.get('SELECT * FROM otps WHERE phone_number = ? AND otp_code = ?', [phone, otp], (err, record) => {
-        if (err || !record) return res.status(400).json({ error: 'Invalid OTP code' });
-        if (new Date(record.expires_at) < new Date()) {
-            return res.status(400).json({ error: 'OTP has expired' });
+        if (user.password !== password) {
+            return res.status(401).json({ error: 'Incorrect password.' });
         }
 
-        db.get('SELECT * FROM users WHERE phone_number = ? AND status = "approved"', [phone], (err, user) => {
-            if (!user) return res.status(403).json({ error: 'User account not approved' });
+        // Generate Single-Session JWT Token
+        const token = jwt.sign({ id: user.id, phone: user.phone_number, role: user.role }, JWT_SECRET);
 
-            const token = jwt.sign({ id: user.id, phone: user.phone_number, role: user.role }, JWT_SECRET);
-
-            db.run('UPDATE users SET active_token = ? WHERE id = ?', [token, user.id], (err) => {
-                if (err) return res.status(500).json({ error: 'Session creation failed' });
-                db.run('DELETE FROM otps WHERE phone_number = ?', [phone]);
-
-                res.json({ token, role: user.role, name: user.name, phone: user.phone_number });
-            });
+        db.run('UPDATE users SET active_token = ? WHERE id = ?', [token, user.id], (err) => {
+            if (err) return res.status(500).json({ error: 'Session creation failed' });
+            res.json({ token, role: user.role, name: user.name, phone: user.phone_number });
         });
     });
 });
@@ -123,10 +72,9 @@ function authenticateSession(req, res, next) {
 }
 
 // -------------------------------------------------------------
-// 2. USER APPROVAL MANAGEMENT ENDPOINTS (ADMIN ONLY)
+// 2. USER APPROVAL MANAGEMENT (ADMIN ONLY)
 // -------------------------------------------------------------
 
-// Fetch All Users for Admin Approval Panel
 app.get('/api/users', authenticateSession, (req, res) => {
     if (req.user.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
 
@@ -136,14 +84,13 @@ app.get('/api/users', authenticateSession, (req, res) => {
     });
 });
 
-// Update User Approval Status (Approve / Reject)
 app.put('/api/users/:id/status', authenticateSession, (req, res) => {
     if (req.user.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
 
-    const { status } = req.body; // 'approved' or 'rejected'
+    const { status } = req.body;
     db.run('UPDATE users SET status = ? WHERE id = ?', [status, req.params.id], function (err) {
         if (err) return res.status(500).json({ error: 'Failed to update user status' });
-        res.json({ message: `User status set to ${status}` });
+        res.json({ message: `User status updated to ${status}` });
     });
 });
 
@@ -183,7 +130,8 @@ app.get('/api/loans', authenticateSession, (req, res) => {
             return {
                 ...loan,
                 customer_name: loan.customer_name ? loan.customer_name[0] + '***' : '***',
-                customer_phone: loan.customer_phone ? '******' + loan.customer_phone.slice(-4) : '******'
+                customer_phone: loan.customer_phone ? '******' + loan.customer_phone.slice(-4) : '******',
+                customer_alt_phone: loan.customer_alt_phone ? '******' + loan.customer_alt_phone.slice(-4) : '******'
             };
         });
 
@@ -193,7 +141,7 @@ app.get('/api/loans', authenticateSession, (req, res) => {
 
 app.post('/api/loans', authenticateSession, (req, res) => {
     const {
-        loan_type, customer_name, customer_phone, loan_amount, bank_details,
+        loan_type, customer_name, customer_phone, customer_alt_phone, loan_amount, bank_details,
         bank_staff_name, bank_staff_phone, disbursal_amount, loan_created_date,
         loan_approved_date, disbursal_expected_date, on_hold_date, disbursed_date,
         source, person_name, person_number, loan_status, remarks
@@ -201,15 +149,15 @@ app.post('/api/loans', authenticateSession, (req, res) => {
 
     const sql = `
         INSERT INTO loans (
-            loan_type, customer_name, customer_phone, loan_amount, bank_details,
+            loan_type, customer_name, customer_phone, customer_alt_phone, loan_amount, bank_details,
             bank_staff_name, bank_staff_phone, disbursal_amount, loan_created_date,
             loan_approved_date, disbursal_expected_date, on_hold_date, disbursed_date,
             source, person_name, person_number, loan_status, remarks, created_by
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
 
     const params = [
-        loan_type, customer_name, customer_phone, loan_amount, bank_details,
+        loan_type, customer_name, customer_phone, customer_alt_phone || null, loan_amount, bank_details,
         bank_staff_name, bank_staff_phone, disbursal_amount, loan_created_date,
         loan_approved_date, disbursal_expected_date, on_hold_date, disbursed_date,
         source, person_name, person_number, loan_status, remarks, req.user.phone
@@ -227,7 +175,7 @@ app.put('/api/loans/:id', authenticateSession, (req, res) => {
     }
 
     const {
-        customer_name, customer_phone, loan_amount, loan_status, disbursal_amount,
+        customer_name, customer_phone, customer_alt_phone, loan_amount, loan_status, disbursal_amount,
         loan_approved_date, disbursal_expected_date, on_hold_date, disbursed_date, remarks
     } = req.body;
 
@@ -235,6 +183,7 @@ app.put('/api/loans/:id', authenticateSession, (req, res) => {
         UPDATE loans SET 
             customer_name = COALESCE(?, customer_name),
             customer_phone = COALESCE(?, customer_phone),
+            customer_alt_phone = COALESCE(?, customer_alt_phone),
             loan_amount = COALESCE(?, loan_amount),
             loan_status = ?, 
             disbursal_amount = ?,
@@ -247,7 +196,7 @@ app.put('/api/loans/:id', authenticateSession, (req, res) => {
     `;
 
     db.run(sql, [
-        customer_name, customer_phone, loan_amount, loan_status, disbursal_amount,
+        customer_name, customer_phone, customer_alt_phone, loan_amount, loan_status, disbursal_amount,
         loan_approved_date, disbursal_expected_date, on_hold_date, disbursed_date, remarks, req.params.id
     ], function (err) {
         if (err) return res.status(500).json({ error: 'Failed to update loan' });
@@ -255,7 +204,6 @@ app.put('/api/loans/:id', authenticateSession, (req, res) => {
     });
 });
 
-// DELETE LOAN APPLICATION (ADMIN ONLY)
 app.delete('/api/loans/:id', authenticateSession, (req, res) => {
     if (req.user.role !== 'admin') {
         return res.status(403).json({ error: 'Forbidden: Only Admins can delete applications.' });
@@ -267,4 +215,5 @@ app.delete('/api/loans/:id', authenticateSession, (req, res) => {
     });
 });
 
-app.listen(3000, () => console.log('🚀 Elite Financial Service Server running on http://localhost:3000'));
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`🚀 Elite Financial Service Server running on port ${PORT}`));
