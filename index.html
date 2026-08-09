@@ -341,4 +341,313 @@
     /* SEARCHABLE BANK DROPDOWN LOGIC */
     async function loadBanks() {
         const res = await fetch(`${API_URL}/banks`, {
-            headers: { 'Authorization
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        });
+        if (res.ok) {
+            allBankNames = await res.json();
+            renderBankDropdownItems(allBankNames);
+        }
+    }
+
+    function renderBankDropdownItems(banks) {
+        const dropdownMenu = document.getElementById('bankDropdownMenu');
+        if (!banks || banks.length === 0) {
+            dropdownMenu.innerHTML = '<div class="bank-dropdown-item" style="color:#888;">No matching banks found</div>';
+            return;
+        }
+
+        dropdownMenu.innerHTML = banks.map(b => 
+            `<div class="bank-dropdown-item" onclick="selectBankName('${b.replace(/'/g, "\\'")}')">${b}</div>`
+        ).join('');
+    }
+
+    function showBankDropdown() {
+        renderBankDropdownItems(allBankNames);
+        document.getElementById('bankDropdownMenu').style.display = 'block';
+    }
+
+    function toggleBankDropdown(e) {
+        e.stopPropagation();
+        const menu = document.getElementById('bankDropdownMenu');
+        if (menu.style.display === 'block') {
+            menu.style.display = 'none';
+        } else {
+            showBankDropdown();
+            document.getElementById('bankDetails').focus();
+        }
+    }
+
+    function filterBankList() {
+        const query = document.getElementById('bankDetails').value.toLowerCase().trim();
+        const filtered = allBankNames.filter(b => b.toLowerCase().includes(query));
+        renderBankDropdownItems(filtered);
+        document.getElementById('bankDropdownMenu').style.display = 'block';
+    }
+
+    function selectBankName(bankName) {
+        document.getElementById('bankDetails').value = bankName;
+        document.getElementById('bankDropdownMenu').style.display = 'none';
+    }
+
+    // Close dropdown menu when clicking outside
+    document.addEventListener('click', function(e) {
+        const wrapper = document.querySelector('.bank-select-wrapper');
+        if (wrapper && !wrapper.contains(e.target)) {
+            document.getElementById('bankDropdownMenu').style.display = 'none';
+        }
+    });
+
+    async function addNewBank() {
+        const newBank = prompt("Enter new Bank/NBFC Name:");
+        if (!newBank) return;
+
+        const res = await fetch(`${API_URL}/banks`, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+            },
+            body: JSON.stringify({ bank_name: newBank })
+        });
+        if (res.ok) {
+            alert('Bank added successfully!');
+            await loadBanks();
+            selectBankName(newBank.trim());
+        }
+    }
+
+    async function loadLoans() {
+        const res = await fetch(`${API_URL}/loans`, {
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        });
+        if (res.status === 401) return logout();
+        
+        allLoans = await res.json();
+        
+        const closed = allLoans.filter(l => ['Disbursed', 'Rejected'].includes(l.loan_status));
+        const pending = allLoans.filter(l => !['Disbursed', 'Rejected'].includes(l.loan_status));
+        
+        document.getElementById('totalCount').innerText = allLoans.length;
+        document.getElementById('pendingCount').innerText = pending.length;
+        document.getElementById('closedCount').innerText = closed.length;
+
+        renderLoanList('recentLoanList', allLoans.slice(0, 5));
+        renderLoanList('pendingLoanList', pending);
+        renderLoanList('closedLoanList', closed);
+    }
+
+    function renderLoanList(elementId, loans) {
+        const listDiv = document.getElementById(elementId);
+        if (!Array.isArray(loans) || loans.length === 0) {
+            listDiv.innerHTML = '<p style="text-align:center; color:#777;">No records found.</p>';
+            return;
+        }
+
+        const isAdmin = localStorage.getItem('role') === 'admin';
+
+        listDiv.innerHTML = loans.map(l => {
+            const isClosed = ['Disbursed', 'Rejected'].includes(l.loan_status);
+            return `
+                <div class="loan-card ${isClosed ? 'closed' : ''}">
+                    <span class="badge ${l.loan_status.toLowerCase()}">${l.loan_status}</span>
+                    <strong>${l.customer_name}</strong> - ₹${l.loan_amount} (${l.loan_type})<br>
+                    <small><b>Phone:</b> ${l.customer_phone} ${l.customer_alt_phone ? '| <b>Alt:</b> ' + l.customer_alt_phone : ''} | <b>Date:</b> ${l.loan_created_date || 'N/A'}</small><br>
+                    <small><b>Bank:</b> ${l.bank_details || 'N/A'} | <b>Bank Staff:</b> ${l.bank_staff_name || 'N/A'}</small><br>
+                    <small><b>Remarks:</b> ${l.remarks || 'None'}</small><br>
+                    
+                    ${isAdmin ? `
+                        <div class="btn-actions">
+                            <button class="btn-edit" onclick="openUpdateModal(${l.id})">✏️ Edit / Update</button>
+                            <button class="btn-delete" onclick="deleteLoan(${l.id})">🗑️ Delete</button>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+        }).join('');
+    }
+
+    async function deleteLoan(id) {
+        if (!confirm('Are you sure you want to permanently delete this loan application?')) return;
+
+        const res = await fetch(`${API_URL}/loans/${id}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        });
+
+        if (res.ok) {
+            alert('✅ Application deleted successfully!');
+            loadLoans();
+        } else {
+            alert('❌ Failed to delete application.');
+        }
+    }
+
+    async function loadUserRequests() {
+        const res = await fetch(`${API_URL}/users`, {
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        });
+        if (!res.ok) return;
+
+        const users = await res.json();
+        const usersDiv = document.getElementById('usersList');
+
+        usersDiv.innerHTML = users.map(u => `
+            <div style="border: 1px solid #ccc; padding: 10px; margin-bottom: 8px; border-radius: 6px; display:flex; justify-content:space-between; align-items:center;">
+                <div>
+                    <strong>${u.phone_number}</strong> (${u.role.toUpperCase()})<br>
+                    <small>Status: <b style="color:${u.status === 'approved' ? 'green' : (u.status === 'pending' ? 'orange' : 'red')}">${u.status.toUpperCase()}</b></small>
+                </div>
+                <div>
+                    ${u.status !== 'approved' ? `<button onclick="updateUserStatus(${u.id}, 'approved')" style="background:green; padding:6px 10px; font-size:0.8rem; margin-right:4px;">Approve</button>` : ''}
+                    ${u.status !== 'rejected' ? `<button onclick="updateUserStatus(${u.id}, 'rejected')" style="background:red; padding:6px 10px; font-size:0.8rem;">Reject</button>` : ''}
+                </div>
+            </div>
+        `).join('');
+    }
+
+    async function updateUserStatus(userId, newStatus) {
+        const res = await fetch(`${API_URL}/users/${userId}/status`, {
+            method: 'PUT',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+            },
+            body: JSON.stringify({ status: newStatus })
+        });
+
+        if (res.ok) {
+            alert(`User status updated to ${newStatus}`);
+            loadUserRequests();
+        }
+    }
+
+    function openUpdateModal(id) {
+        const loan = allLoans.find(item => item.id === id);
+        if (!loan) return;
+
+        document.getElementById('updateLoanId').value = loan.id;
+        document.getElementById('editCustomerName').value = loan.customer_name || '';
+        document.getElementById('editCustomerPhone').value = loan.customer_phone || '';
+        document.getElementById('editCustomerAltPhone').value = loan.customer_alt_phone || '';
+        document.getElementById('editLoanAmount').value = loan.loan_amount || '';
+        document.getElementById('updateStatus').value = loan.loan_status || 'New';
+        document.getElementById('updateDisbursalAmount').value = loan.disbursal_amount || '';
+        document.getElementById('updateApprovedDate').value = loan.loan_approved_date || '';
+        document.getElementById('updateExpectedDate').value = loan.disbursal_expected_date || '';
+        document.getElementById('updateHoldDate').value = loan.on_hold_date || '';
+        document.getElementById('updateDisbursedDate').value = loan.disbursed_date || '';
+        document.getElementById('updateRemarks').value = loan.remarks || '';
+
+        document.getElementById('updateModal').classList.remove('hidden');
+    }
+
+    function closeModal() {
+        document.getElementById('updateModal').classList.add('hidden');
+    }
+
+    document.getElementById('loanForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const payload = {
+            customer_name: document.getElementById('customerName').value,
+            customer_phone: document.getElementById('customerPhone').value,
+            customer_alt_phone: document.getElementById('customerAltPhone').value,
+            loan_amount: document.getElementById('loanAmount').value,
+            bank_details: document.getElementById('bankDetails').value,
+            loan_type: document.getElementById('loanType').value,
+            bank_staff_name: document.getElementById('bankStaffName').value,
+            bank_staff_phone: document.getElementById('bankStaffPhone').value,
+            source: document.getElementById('source').value,
+            person_name: document.getElementById('personName').value,
+            person_number: document.getElementById('personNumber').value,
+            loan_created_date: new Date().toISOString().split('T')[0],
+            loan_status: 'New',
+            remarks: 'Stage 1 Submitted'
+        };
+
+        const res = await fetch(`${API_URL}/loans`, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('token')}` 
+            },
+            body: JSON.stringify(payload)
+        });
+
+        if (res.ok) {
+            alert('✅ Stage 1 Application Submitted!');
+            document.getElementById('loanForm').reset();
+            loadLoans();
+            switchTab('dashboardTab');
+        }
+    });
+
+    document.getElementById('updateForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const id = document.getElementById('updateLoanId').value;
+        const payload = {
+            customer_name: document.getElementById('editCustomerName').value,
+            customer_phone: document.getElementById('editCustomerPhone').value,
+            customer_alt_phone: document.getElementById('editCustomerAltPhone').value,
+            loan_amount: document.getElementById('editLoanAmount').value,
+            loan_status: document.getElementById('updateStatus').value,
+            disbursal_amount: document.getElementById('updateDisbursalAmount').value,
+            loan_approved_date: document.getElementById('updateApprovedDate').value,
+            disbursal_expected_date: document.getElementById('updateExpectedDate').value,
+            on_hold_date: document.getElementById('updateHoldDate').value,
+            disbursed_date: document.getElementById('updateDisbursedDate').value,
+            remarks: document.getElementById('updateRemarks').value
+        };
+
+        const res = await fetch(`${API_URL}/loans/${id}`, {
+            method: 'PUT',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('token')}` 
+            },
+            body: JSON.stringify(payload)
+        });
+
+        if (res.ok) {
+            alert('✅ Application Details Saved!');
+            closeModal();
+            loadLoans();
+        }
+    });
+
+    function exportToCSV() {
+        if (!allLoans || allLoans.length === 0) return alert('No data available to export.');
+
+        const headers = [
+            'ID', 'Loan Type', 'Customer Name', 'Customer Phone', 'Customer Alt Phone', 'Loan Amount',
+            'Disbursal Amount', 'Bank Details', 'Bank Staff Name', 'Bank Staff Phone',
+            'Created Date', 'Approved Date', 'Expected Disbursal Date', 'On Hold Date',
+            'Disbursed Date', 'Source', 'Person Name', 'Person Number', 'Loan Status',
+            'Remarks', 'Created By', 'Created Timestamp'
+        ];
+
+        const rows = allLoans.map(l => [
+            l.id, `"${l.loan_type || ''}"`, `"${l.customer_name || ''}"`, `"${l.customer_phone || ''}"`, `"${l.customer_alt_phone || ''}"`,
+            l.loan_amount || 0, l.disbursal_amount || 0, `"${l.bank_details || ''}"`, `"${l.bank_staff_name || ''}"`,
+            `"${l.bank_staff_phone || ''}"`, `"${l.loan_created_date || ''}"`, `"${l.loan_approved_date || ''}"`,
+            `"${l.disbursal_expected_date || ''}"`, `"${l.on_hold_date || ''}"`, `"${l.disbursed_date || ''}"`,
+            `"${l.source || ''}"`, `"${l.person_name || ''}"`, `"${l.person_number || ''}"`, `"${l.loan_status || ''}"`,
+            `"${(l.remarks || '').replace(/"/g, '""')}"`, `"${l.created_by || ''}"`, `"${l.created_at || ''}"`
+        ]);
+
+        const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement('a');
+        link.setAttribute('href', encodedUri);
+        link.setAttribute('download', `Elite_Financial_Service_Report_${new Date().toISOString().split('T')[0]}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+
+    function logout() {
+        localStorage.clear();
+        location.reload();
+    }
+</script>
+</body>
+</html>
