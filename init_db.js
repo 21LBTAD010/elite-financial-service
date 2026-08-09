@@ -1,18 +1,22 @@
 const sqlite3 = require('sqlite3').verbose();
 const db = new sqlite3.Database('./loans.db');
 
-console.log('⏳ Updating database schema for Alternate Phone & User Approvals...');
+console.log('⏳ Updating database schema for Fixed Password Login...');
 
 db.serialize(() => {
-    // 1. Users Table
+    // 1. Users Table with password column
     db.run(`CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         phone_number TEXT UNIQUE NOT NULL,
         name TEXT NOT NULL,
+        password TEXT NOT NULL,
         role TEXT CHECK(role IN ('admin', 'staff')) NOT NULL DEFAULT 'staff',
-        status TEXT CHECK(status IN ('pending', 'approved', 'rejected')) NOT NULL DEFAULT 'pending',
+        status TEXT CHECK(status IN ('pending', 'approved', 'rejected')) NOT NULL DEFAULT 'approved',
         active_token TEXT DEFAULT NULL
     )`);
+
+    // Ensure password column exists if upgrading database
+    db.run(`ALTER TABLE users ADD COLUMN password TEXT`, () => {});
 
     // 2. Loans Table
     db.run(`CREATE TABLE IF NOT EXISTS loans (
@@ -40,15 +44,25 @@ db.serialize(() => {
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`);
 
-    // Upgrade existing schema if needed
-    db.run(`ALTER TABLE loans ADD COLUMN customer_alt_phone TEXT`, () => {});
-    db.run(`ALTER TABLE users ADD COLUMN status TEXT CHECK(status IN ('pending', 'approved', 'rejected')) DEFAULT 'approved'`, () => {});
+    // 3. Pre-seed Authorized Users with Fixed Password 'Elite@1981'
+    const defaultUsers = [
+        { phone: '9043350445', name: 'Admin User', role: 'admin', pass: 'Elite@1981' },
+        { phone: '6374431536', name: 'Staff User 1', role: 'staff', pass: 'Elite@1981' },
+        { phone: '8838557405', name: 'Staff User 2', role: 'staff', pass: 'Elite@1981' },
+        { phone: '7708171016', name: 'Staff User 3', role: 'staff', pass: 'Elite@1981' }
+    ];
 
-    // Ensure Primary Admin is set
-    const insertAdmin = db.prepare(`INSERT OR REPLACE INTO users (phone_number, name, role, status) VALUES (?, ?, ?, ?)`);
-    insertAdmin.run('9043350445', 'Admin User', 'admin', 'approved');
-    insertAdmin.finalize();
+    const stmt = db.prepare(`
+        INSERT INTO users (phone_number, name, password, role, status) 
+        VALUES (?, ?, ?, ?, 'approved')
+        ON CONFLICT(phone_number) DO UPDATE SET password = excluded.password, status = 'approved'
+    `);
 
-    console.log('✅ Database updated successfully!');
+    defaultUsers.forEach(u => {
+        stmt.run(u.phone, u.name, u.pass, u.role);
+    });
+    stmt.finalize();
+
+    console.log('✅ Successfully seeded fixed credentials for 4 authorized users!');
     db.close();
 });
