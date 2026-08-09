@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Elite Financial Service - Mobile Loan Tracker</title>
+    <style>
+        :root { 
+            --primary: #0d47a1; 
+            --secondary: #1565c0;
+            --bg: #f4f6f9; 
+            --text: #333;
+            --success: #2e7d32;
+            --warning: #ef6c00;
+            --danger: #c62828;
+        }
+
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); margin: 0; padding: 0; color: var(--text); }
+        .app-container { display: flex; flex-direction: column; min-height: 100vh; }
+        @media (min-width: 768px) {
+            .app-container { flex-direction: row; }
+        }
+
+        /* Sidebar Navigation */
+        .sidebar { background: var(--primary); color: white; width: 100%; box-sizing: border-box; padding: 15px; }
+        @media (min-width: 768px) {
+            .sidebar { width: 250px; min-height: 100vh; position: fixed; }
+            .main-content { margin-left: 250px; flex: 1; }
+        }
+        .sidebar h2 { font-size: 1.15rem; text-align: center; margin-top: 0; border-bottom: 1px solid rgba(255,255,255,0.2); padding-bottom: 10px; text-transform: uppercase; }
+        .nav-menu { list-style: none; padding: 0; margin: 15px 0; display: flex; flex-wrap: wrap; gap: 8px; }
+        @media (min-width: 768px) {
+            .nav-menu { flex-direction: column; }
+        }
+        .nav-item { padding: 10px 14px; background: rgba(255,255,255,0.1); border-radius: 6px; cursor: pointer; font-size: 0.9rem; text-align: center; flex: 1; white-space: nowrap; }
+        @media (min-width: 768px) {
+            .nav-item { text-align: left; flex: none; }
+        }
+        .nav-item:hover, .nav-item.active { background: white; color: var(--primary); font-weight: bold; }
+        .export-btn { background: #2e7d32 !important; color: white !important; margin-top: 10px; }
+
+        .main-content { padding: 15px; max-width: 800px; margin-left: auto; margin-right: auto; box-sizing: border-box; }
+        .card { background: white; padding: 18px; border-radius: 10px; margin-bottom: 15px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+        
+        .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 15px; }
+        .stat-card { background: white; padding: 12px; border-radius: 8px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+        .stat-number { font-size: 1.4rem; font-weight: bold; color: var(--primary); }
+        .stat-label { font-size: 0.75rem; color: #666; font-weight: 600; }
+
+        .section-title { font-size: 0.9rem; font-weight: bold; color: var(--primary); margin: 15px 0 8px; border-bottom: 2px solid var(--primary); padding-bottom: 4px; }
+        .form-group { margin-bottom: 12px; }
+        label { font-size: 0.85rem; font-weight: bold; display: block; margin-bottom: 4px; }
+        input, select, textarea { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; font-size: 0.95rem; }
+        button { width: 100%; background: var(--primary); color: white; padding: 12px; border: none; border-radius: 6px; font-size: 0.95rem; font-weight: bold; cursor: pointer; }
+
+        .loan-card { border-left: 5px solid var(--primary); padding: 12px; margin-bottom: 12px; background: #fafafa; border-radius: 6px; font-size: 0.88rem; }
+        .badge { display: inline-block; padding: 3px 8px; border-radius: 12px; font-size: 0.75rem; color: white; background: var(--primary); font-weight: bold; float: right; }
+        .badge.pending { background: var(--warning); }
+        .badge.disbursed { background: var(--success); }
+        .badge.rejected { background: var(--danger); }
+
+        .btn-actions { display: flex; gap: 8px; margin-top: 10px; }
+        .btn-edit { background: var(--warning); color: white; padding: 8px; font-size: 0.85rem; border-radius: 4px; flex: 1; }
+        .btn-delete { background: var(--danger); color: white; padding: 8px; font-size: 0.85rem; border-radius: 4px; width: auto; }
+        .add-bank-btn { background: var(--success); margin-top: 4px; font-size: 0.8rem; padding: 6px; }
+
+        .modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 2000; }
+        .modal-content { background: white; padding: 20px; border-radius: 10px; max-width: 480px; width: 90%; max-height: 85vh; overflow-y: auto; }
+        .close-btn { background: #757575; margin-top: 6px; }
+        .hidden { display: none !important; }
+        .error-msg { color: var(--danger); font-size: 0.85rem; text-align: center; margin-top: 8px; font-weight: bold; }
+        .pending-box { background: #fff3e0; border: 1px solid #ffe0b2; padding: 15px; border-radius: 8px; text-align: center; color: #e65100; font-weight: bold; margin-top: 15px; }
+    </style>
+</head>
+<body>
+
+<div id="loginSection" style="max-width:420px; margin: 40px auto; padding: 15px;">
+    <div class="card">
+        <h2>Elite Financial Service</h2>
+        <p style="text-align: center; font-size: 0.85rem; color: #666; margin-top: -10px;">Staff Access Portal</p>
+        
+        <div id="phoneStep">
+            <div class="form-group">
+                <label>Registered Mobile Number</label>
+                <input type="tel" id="loginPhone" placeholder="Enter mobile number" value="9043350445">
+            </div>
+            <button id="sendOtpBtn" onclick="requestOTP()">Send OTP via WhatsApp</button>
+            <div id="loginError" class="error-msg"></div>
+        </div>
+
+        <div id="otpStep" class="hidden">
+            <div class="form-group">
+                <label>WhatsApp OTP Code</label>
+                <input type="number" id="otpCode" placeholder="Enter 6-digit code">
+            </div>
+            <button id="verifyOtpBtn" onclick="verifyOTP()">Verify & Login</button>
+            <div id="otpError" class="error-msg"></div>
+        </div>
+
+        <div id="pendingApprovalBox" class="pending-box hidden">
+            ⏳ Account Pending Approval<br>
+            <span style="font-weight: normal; font-size: 0.85rem; display: block; margin-top: 6px;">
+                Your registration request has been submitted. Please wait for an Admin to approve your account.
+            </span>
+            <button onclick="location.reload()" style="background:#ef6c00; margin-top:10px; padding:8px;">Check Status Again</button>
+        </div>
+    </div>
+</div>
+
+<div id="appSection" class="app-container hidden">
+    <div class="sidebar">
+        <h2>Elite Financial Service</h2>
+        <div id="userInfo" style="font-size:0.85rem; text-align:center; margin-bottom:10px; color:#e0e0e0;"></div>
+        
+        <ul class="nav-menu">
+            <li class="nav-item active" onclick="switchTab('dashboardTab')">📊 Dashboard</li>
+            <li class="nav-item" onclick="switchTab('newAppTab')">➕ New Application</li>
+            <li class="nav-item" onclick="switchTab('pendingTab')">⏳ Pending Loans</li>
+            <li class="nav-item" onclick="switchTab('closedTab')">✅ Closed Loans</li>
+            <li id="adminNavTab" class="nav-item hidden" onclick="switchTab('usersTab')">👥 Staff Approvals</li>
+            <li class="nav-item export-btn" onclick="exportToCSV()">📥 Export Excel/CSV</li>
+            <li class="nav-item" style="background:#c62828; color:white; margin-top:15px;" onclick="logout()">🚪 Logout</li>
+        </ul>
+    </div>
+
+    <div class="main-content">
+        <div id="dashboardTab">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-number" id="totalCount">0</div>
+                    <div class="stat-label">TOTAL LOANS</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="pendingCount" style="color:var(--warning);">0</div>
+                    <div class="stat-label">PENDING</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="closedCount" style="color:var(--success);">0</div>
+                    <div class="stat-label">CLOSED</div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Recent 5 Applications</h3>
+                <div id="recentLoanList">Loading recent list...</div>
+            </div>
+        </div>
+
+        <div id="newAppTab" class="hidden">
+            <div class="card">
+                <h3>Stage 1: New Loan Application</h3>
+                <form id="loanForm">
+                    <div class="section-title">1. Customer Details</div>
+                    <div class="form-group"><label>Customer Name *</label><input type="text" id="customerName" required></div>
+                    <div class="form-group"><label>Customer Phone Number *</label><input type="tel" id="customerPhone" required></div>
+                    <div class="form-group"><label>Loan Amount (₹) *</label><input type="number" id="loanAmount" required></div>
+
+                    <div class="section-title">2. Bank & Loan Type</div>
+                    <div class="form-group">
+                        <label>Bank Name *</label>
+                        <select id="bankDetails" required><option value="">Loading banks...</option></select>
+                        <button type="button" class="add-bank-btn" onclick="addNewBank()">+ Add New Bank Name</button>
+                    </div>
+                    <div class="form-group">
+                        <label>Loan Type *</label>
+                        <select id="loanType" required>
+                            <option value="">Select Loan Type</option>
+                            <option value="Personal">Personal Loan</option>
+                            <option value="Home">Home Loan</option>
+                            <option value="Business">Business Loan</option>
+                            <option value="Mortgage">Mortgage Loan</option>
+                        </select>
+                    </div>
+
+                    <div class="section-title">3. Bank Staff Contact Details</div>
+                    <div class="form-group"><label>Bank Staff Name</label><input type="text" id="bankStaffName"></div>
+                    <div class="form-group"><label>Bank Staff Phone Number</label><input type="tel" id="bankStaffPhone"></div>
+
+                    <div class="section-title">4. Sourcing Details</div>
+                    <div class="form-group"><label>Source</label><input type="text" id="source"></div>
+                    <div class="form-group"><label>Contact Person Name</label><input type="text" id="personName"></div>
+                    <div class="form-group"><label>Contact Person Phone</label><input type="tel" id="personNumber"></div>
+
+                    <button type="submit">Submit Stage 1 Application</button>
+                </form>
+            </div>
+        </div>
+
+        <div id="pendingTab" class="hidden">
+            <div class="card">
+                <h3>Pending Loan Applications</h3>
+                <div id="pendingLoanList">Loading pending loans...</div>
+            </div>
+        </div>
+
+        <div id="closedTab" class="hidden">
+            <div class="card">
+                <h3>Closed Loan Applications</h3>
+                <div id="closedLoanList">Loading closed loans...</div>
+            </div>
+        </div>
+
+        <div id="usersTab" class="hidden">
+            <div class="card">
+                <h3>Staff Account Requests</h3>
+                <div id="usersList">Loading user requests...</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="updateModal" class="modal hidden">
+    <div class="modal-content">
+        <h3>Edit & Stage 2 Process</h3>
+        <form id="updateForm">
+            <input type="hidden" id="updateLoanId">
+
+            <div class="section-title">Stage 1 Details (Editable)</div>
+            <div class="form-group"><label>Customer Name</label><input type="text" id="editCustomerName"></div>
+            <div class="form-group"><label>Customer Phone</label><input type="tel" id="editCustomerPhone"></div>
+            <div class="form-group"><label>Requested Loan Amount (₹)</label><input type="number" id="editLoanAmount"></div>
+
+            <div class="section-title">Stage 2 Status & Disbursal</div>
+            <div class="form-group">
+                <label>Loan Status *</label>
+                <select id="updateStatus" required>
+                    <option value="New">New</option>
+                    <option value="In Process">In Process</option>
+                    <option value="Approved">Approved</option>
+                    <option value="On Hold">On Hold</option>
+                    <option value="Pending from Bank">Pending from Bank</option>
+                    <option value="Pending from Customer">Pending from Customer</option>
+                    <option value="Pending on Me">Pending on Me</option>
+                    <option value="Disbursed">Disbursed</option>
+                    <option value="Rejected">Rejected</option>
+                </select>
+            </div>
+
+            <div class="form-group"><label>Disbursal Amount (₹)</label><input type="number" id="updateDisbursalAmount"></div>
+
+            <div class="section-title">Timeline Dates</div>
+            <div class="form-group"><label>Approved Date</label><input type="date" id="updateApprovedDate"></div>
+            <div class="form-group"><label>Expected Disbursal Date</label><input type="date" id="updateExpectedDate"></div>
+            <div class="form-group"><label>On Hold Date</label><input type="date" id="updateHoldDate"></div>
+            <div class="form-group"><label>Disbursed Date</label><input type="date" id="updateDisbursedDate"></div>
+
+            <div class="form-group"><label>Remarks / Follow-up Notes</label><textarea id="updateRemarks" rows="3"></textarea></div>
+
+            <button type="submit">Save Changes</button>
+            <button type="button" class="close-btn" onclick="closeModal()">Cancel</button>
+        </form>
+    </div>
+</div>
+
+<script>
+    const API_URL = '/api';
+    let allLoans = [];
+
+    if (localStorage.getItem('token')) {
+        showApp();
+    }
+
+    async function requestOTP() {
+        const phone = document.getElementById('loginPhone').value.trim();
+        const errDiv = document.getElementById('loginError');
+        if (!phone) return errDiv.innerText = 'Please enter mobile number';
+
+        try {
+            const res = await fetch(`${API_URL}/auth/request-otp`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ phone })
+            });
+            const data = await res.json();
+            
+            if (data.status === 'pending') {
+                document.getElementById('phoneStep').classList.add('hidden');
+                document.getElementById('pendingApprovalBox').classList.remove('hidden');
+            } else if (data.status === 'approved') {
+                alert('✅ OTP generated! Check your terminal running node server.js');
+                document.getElementById('phoneStep').classList.add('hidden');
+                document.getElementById('otpStep').classList.remove('hidden');
+            } else {
+                errDiv.innerText = data.error || 'Request failed';
+            }
+        } catch (e) {
+            errDiv.innerText = 'Server connection error!';
+        }
+    }
+
+    async function verifyOTP() {
+        const phone = document.getElementById('loginPhone').value.trim();
+        const otp = document.getElementById('otpCode').value.trim();
+        const errDiv = document.getElementById('otpError');
+
+        try {
+            const res = await fetch(`${API_URL}/auth/verify-otp`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ phone, otp })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                localStorage.setItem('token', data.token);
+                localStorage.setItem('role', data.role);
+                localStorage.setItem('name', data.name);
+                showApp();
+            } else {
+                errDiv.innerText = data.error || 'Invalid OTP';
+            }
+        } catch (e) {
+            errDiv.innerText = 'Connection error.';
+        }
+    }
+
+    function showApp() {
+        document.getElementById('loginSection').classList.add('hidden');
+        document.getElementById('appSection').classList.remove('hidden');
+        
+        const role = localStorage.getItem('role');
+        document.getElementById('userInfo').innerText = `${localStorage.getItem('name')} (${role.toUpperCase()})`;
+        
+        if (role === 'admin') {
+            document.getElementById('adminNavTab').classList.remove('hidden');
+        }
+
+        loadBanks();
+        loadLoans();
+    }
+
+    function switchTab(tabId) {
+        ['dashboardTab', 'newAppTab', 'pendingTab', 'closedTab', 'usersTab'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.classList.add('hidden');
+        });
+        document.getElementById(tabId).classList.remove('hidden');
+
+        document.querySelectorAll('.nav-item').forEach(item => {
+            if (!item.classList.contains('export-btn')) item.classList.remove('active');
+        });
+        if (event) event.currentTarget.classList.add('active');
+
+        if (tabId === 'usersTab') loadUserRequests();
+    }
+
+    async function loadBanks() {
+        const res = await fetch(`${API_URL}/banks`, {
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        });
+        if (res.ok) {
+            const banks = await res.json();
+            document.getElementById('bankDetails').innerHTML = 
+                '<option value="">Select Bank / NBFC</option>' + 
+                banks.map(b => `<option value="${b}">${b}</option>`).join('');
+        }
+    }
+
+    async function addNewBank() {
+        const newBank = prompt("Enter new Bank/NBFC Name:");
+        if (!newBank) return;
+
+        const res = await fetch(`${API_URL}/banks`, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+            },
+            body: JSON.stringify({ bank_name: newBank })
+        });
+        if (res.ok) {
+            alert('Bank added successfully!');
+            await loadBanks();
+            document.getElementById('bankDetails').value = newBank.trim();
+        }
+    }
+
+    async function loadLoans() {
+        const res = await fetch(`${API_URL}/loans`, {
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        });
+        if (res.status === 401) return logout();
+        
+        allLoans = await res.json();
+        
+        const closed = allLoans.filter(l => ['Disbursed', 'Rejected'].includes(l.loan_status));
+        const pending = allLoans.filter(l => !['Disbursed', 'Rejected'].includes(l.loan_status));
+        
+        document.getElementById('totalCount').innerText = allLoans.length;
+        document.getElementById('pendingCount').innerText = pending.length;
+        document.getElementById('closedCount').innerText = closed.length;
+
+        renderLoanList('recentLoanList', allLoans.slice(0, 5));
+        renderLoanList('pendingLoanList', pending);
+        renderLoanList('closedLoanList', closed);
+    }
+
+    function renderLoanList(elementId, loans) {
+        const listDiv = document.getElementById(elementId);
+        if (!Array.isArray(loans) || loans.length === 0) {
+            listDiv.innerHTML = '<p style="text-align:center; color:#777;">No records found.</p>';
+            return;
+        }
+
+        const isAdmin = localStorage.getItem('role') === 'admin';
+
+        listDiv.innerHTML = loans.map(l => {
+            const isClosed = ['Disbursed', 'Rejected'].includes(l.loan_status);
+            return `
+                <div class="loan-card ${isClosed ? 'closed' : ''}">
+                    <span class="badge ${l.loan_status.toLowerCase()}">${l.loan_status}</span>
+                    <strong>${l.customer_name}</strong> - ₹${l.loan_amount} (${l.loan_type})<br>
+                    <small><b>Phone:</b> ${l.customer_phone} | <b>Date:</b> ${l.loan_created_date || 'N/A'}</small><br>
+                    <small><b>Bank:</b> ${l.bank_details || 'N/A'} | <b>Bank Staff:</b> ${l.bank_staff_name || 'N/A'}</small><br>
+                    <small><b>Remarks:</b> ${l.remarks || 'None'}</small><br>
+                    
+                    ${isAdmin ? `
+                        <div class="btn-actions">
+                            <button class="btn-edit" onclick="openUpdateModal(${l.id})">✏️ Edit / Update</button>
+                            <button class="btn-delete" onclick="deleteLoan(${l.id})">🗑️ Delete</button>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+        }).join('');
+    }
+
+    async function deleteLoan(id) {
+        if (!confirm('Are you sure you want to permanently delete this loan application?')) return;
+
+        const res = await fetch(`${API_URL}/loans/${id}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        });
+
+        if (res.ok) {
+            alert('✅ Application deleted successfully!');
+            loadLoans();
+        } else {
+            alert('❌ Failed to delete application.');
+        }
+    }
+
+    async function loadUserRequests() {
+        const res = await fetch(`${API_URL}/users`, {
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        });
+        if (!res.ok) return;
+
+        const users = await res.json();
+        const usersDiv = document.getElementById('usersList');
+
+        usersDiv.innerHTML = users.map(u => `
+            <div style="border: 1px solid #ccc; padding: 10px; margin-bottom: 8px; border-radius: 6px; display:flex; justify-content:space-between; align-items:center;">
+                <div>
+                    <strong>${u.phone_number}</strong> (${u.role.toUpperCase()})<br>
+                    <small>Status: <b style="color:${u.status === 'approved' ? 'green' : (u.status === 'pending' ? 'orange' : 'red')}">${u.status.toUpperCase()}</b></small>
+                </div>
+                <div>
+                    ${u.status !== 'approved' ? `<button onclick="updateUserStatus(${u.id}, 'approved')" style="background:green; padding:6px 10px; font-size:0.8rem; margin-right:4px;">Approve</button>` : ''}
+                    ${u.status !== 'rejected' ? `<button onclick="updateUserStatus(${u.id}, 'rejected')" style="background:red; padding:6px 10px; font-size:0.8rem;">Reject</button>` : ''}
+                </div>
+            </div>
+        `).join('');
+    }
+
+    async function updateUserStatus(userId, newStatus) {
+        const res = await fetch(`${API_URL}/users/${userId}/status`, {
+            method: 'PUT',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+            },
+            body: JSON.stringify({ status: newStatus })
+        });
+
+        if (res.ok) {
+            alert(`User status updated to ${newStatus}`);
+            loadUserRequests();
+        }
+    }
+
+    function openUpdateModal(id) {
+        const loan = allLoans.find(item => item.id === id);
+        if (!loan) return;
+
+        document.getElementById('updateLoanId').value = loan.id;
+        document.getElementById('editCustomerName').value = loan.customer_name || '';
+        document.getElementById('editCustomerPhone').value = loan.customer_phone || '';
+        document.getElementById('editLoanAmount').value = loan.loan_amount || '';
+        document.getElementById('updateStatus').value = loan.loan_status || 'New';
+        document.getElementById('updateDisbursalAmount').value = loan.disbursal_amount || '';
+        document.getElementById('updateApprovedDate').value = loan.loan_approved_date || '';
+        document.getElementById('updateExpectedDate').value = loan.disbursal_expected_date || '';
+        document.getElementById('updateHoldDate').value = loan.on_hold_date || '';
+        document.getElementById('updateDisbursedDate').value = loan.disbursed_date || '';
+        document.getElementById('updateRemarks').value = loan.remarks || '';
+
+        document.getElementById('updateModal').classList.remove('hidden');
+    }
+
+    function closeModal() {
+        document.getElementById('updateModal').classList.add('hidden');
+    }
+
+    document.getElementById('loanForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const payload = {
+            customer_name: document.getElementById('customerName').value,
+            customer_phone: document.getElementById('customerPhone').value,
+            loan_amount: document.getElementById('loanAmount').value,
+            bank_details: document.getElementById('bankDetails').value,
+            loan_type: document.getElementById('loanType').value,
+            bank_staff_name: document.getElementById('bankStaffName').value,
+            bank_staff_phone: document.getElementById('bankStaffPhone').value,
+            source: document.getElementById('source').value,
+            person_name: document.getElementById('personName').value,
+            person_number: document.getElementById('personNumber').value,
+            loan_created_date: new Date().toISOString().split('T')[0],
+            loan_status: 'New',
+            remarks: 'Stage 1 Submitted'
+        };
+
+        const res = await fetch(`${API_URL}/loans`, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('token')}` 
+            },
+            body: JSON.stringify(payload)
+        });
+
+        if (res.ok) {
+            alert('✅ Stage 1 Application Submitted!');
+            document.getElementById('loanForm').reset();
+            loadLoans();
+            switchTab('dashboardTab');
+        }
+    });
+
+    document.getElementById('updateForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const id = document.getElementById('updateLoanId').value;
+        const payload = {
+            customer_name: document.getElementById('editCustomerName').value,
+            customer_phone: document.getElementById('editCustomerPhone').value,
+            loan_amount: document.getElementById('editLoanAmount').value,
+            loan_status: document.getElementById('updateStatus').value,
+            disbursal_amount: document.getElementById('updateDisbursalAmount').value,
+            loan_approved_date: document.getElementById('updateApprovedDate').value,
+            disbursal_expected_date: document.getElementById('updateExpectedDate').value,
+            on_hold_date: document.getElementById('updateHoldDate').value,
+            disbursed_date: document.getElementById('updateDisbursedDate').value,
+            remarks: document.getElementById('updateRemarks').value
+        };
+
+        const res = await fetch(`${API_URL}/loans/${id}`, {
+            method: 'PUT',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('token')}` 
+            },
+            body: JSON.stringify(payload)
+        });
+
+        if (res.ok) {
+            alert('✅ Application Details Saved!');
+            closeModal();
+            loadLoans();
+        }
+    });
+
+    function exportToCSV() {
+        if (!allLoans || allLoans.length === 0) return alert('No data available to export.');
+
+        const headers = [
+            'ID', 'Loan Type', 'Customer Name', 'Customer Phone', 'Loan Amount',
+            'Disbursal Amount', 'Bank Details', 'Bank Staff Name', 'Bank Staff Phone',
+            'Created Date', 'Approved Date', 'Expected Disbursal Date', 'On Hold Date',
+            'Disbursed Date', 'Source', 'Person Name', 'Person Number', 'Loan Status',
+            'Remarks', 'Created By', 'Created Timestamp'
+        ];
+
+        const rows = allLoans.map(l => [
+            l.id, `"${l.loan_type || ''}"`, `"${l.customer_name || ''}"`, `"${l.customer_phone || ''}"`,
+            l.loan_amount || 0, l.disbursal_amount || 0, `"${l.bank_details || ''}"`, `"${l.bank_staff_name || ''}"`,
+            `"${l.bank_staff_phone || ''}"`, `"${l.loan_created_date || ''}"`, `"${l.loan_approved_date || ''}"`,
+            `"${l.disbursal_expected_date || ''}"`, `"${l.on_hold_date || ''}"`, `"${l.disbursed_date || ''}"`,
+            `"${l.source || ''}"`, `"${l.person_name || ''}"`, `"${l.person_number || ''}"`, `"${l.loan_status || ''}"`,
+            `"${(l.remarks || '').replace(/"/g, '""')}"`, `"${l.created_by || ''}"`, `"${l.created_at || ''}"`
+        ]);
+
+        const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement('a');
+        link.setAttribute('href', encodedUri);
+        link.setAttribute('download', `Elite_Financial_Service_Report_${new Date().toISOString().split('T')[0]}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+
+    function logout() {
+        localStorage.clear();
+        location.reload();
+    }
+</script>
+</body>
+</html>
